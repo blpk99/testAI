@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI Trash Bin</title>
+</head>
+<body>
+  <h2>AI Trash Bin</h2>
+  <button onclick="connect()">Connect micro:bit</button>
+  <p id="result">---</p>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+
+<script>
+let model, characteristic, webcam;
+
+async function connect() {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ namePrefix: "BBC micro:bit" }],
+    optionalServices: [0xFFE0]
+  });
+
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(0xFFE0);
+  characteristic = await service.getCharacteristic(0xFFE1);
+
+  loadModel();
+}
+
+async function loadModel() {
+  const URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
+
+  model = await tmImage.load(
+    URL + "model.json",
+    URL + "metadata.json"
+  );
+
+  startCamera();
+}
+
+async function startCamera() {
+  webcam = new tmImage.Webcam(224, 224, true);
+  await webcam.setup();
+  await webcam.play();
+  document.body.appendChild(webcam.canvas);
+
+  loop();
+}
+
+async function loop() {
+  webcam.update();
+  const prediction = await model.predict(webcam.canvas);
+
+  document.getElementById("result").innerText =
+    prediction[0].className + " " +
+    (prediction[0].probability * 100).toFixed(1) + "%";
+
+  if (prediction[0].className === "HandUp" &&
+      prediction[0].probability > 0.8) {
+    send("F");   // เดินหน้า
+  } else {
+    send("S");   // หยุด
+  }
+
+  requestAnimationFrame(loop);
+}
+
+function send(cmd) {
+  characteristic.writeValue(
+    new TextEncoder().encode(cmd)
+  );
+}
+</script>
+</body>
+</html>
