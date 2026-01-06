@@ -1,45 +1,88 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="utf-8">
-  <title>AI Trash Bin</title>
+<meta charset="utf-8">
+<title>AI Trash Bin (Pose)</title>
 </head>
 <body>
 
-<h2>AI Trash Bin (Hand Up Detection)</h2>
-<button onclick="init()">Start Camera</button>
+<h2>AI Trash Bin – Pose Control</h2>
+
+<button onclick="connect()">🔵 Connect micro:bit</button>
+<button onclick="init()">📷 Start Camera</button>
+
 <p id="result">---</p>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
 
 <script>
-const URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
-let model, webcam;
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
 
+let model, webcam, ctx, characteristic;
+
+// ================= Bluetooth =================
+async function connect() {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ namePrefix: "BBC micro:bit" }],
+    optionalServices: [0xFFE0]
+  });
+
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(0xFFE0);
+  characteristic = await service.getCharacteristic(0xFFE1);
+
+  document.getElementById("result").innerText = "Bluetooth Connected";
+}
+
+function send(cmd) {
+  if (!characteristic) return;
+  characteristic.writeValue(new TextEncoder().encode(cmd));
+}
+
+// ================= Pose AI =================
 async function init() {
-  const modelURL = URL + "model.json";
-  const metadataURL = URL + "metadata.json";
+  const modelURL = MODEL_URL + "model.json";
+  const metadataURL = MODEL_URL + "metadata.json";
 
-  model = await tmImage.load(modelURL, metadataURL);
+  model = await tmPose.load(modelURL, metadataURL);
 
-  webcam = new tmImage.Webcam(300, 300, true);
+  webcam = new tmPose.Webcam(300, 300, true);
   await webcam.setup();
   await webcam.play();
 
+  const canvas = document.createElement("canvas");
+  canvas.width = 300;
+  canvas.height = 300;
+  ctx = canvas.getContext("2d");
+
   document.body.appendChild(webcam.canvas);
-  window.requestAnimationFrame(loop);
+  document.body.appendChild(canvas);
+
+  loop();
 }
 
 async function loop() {
   webcam.update();
-  const prediction = await model.predict(webcam.canvas);
+
+  const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+  const prediction = await model.predict(posenetOutput);
+
+  ctx.drawImage(webcam.canvas, 0, 0);
+  if (pose) tmPose.drawPose(pose, ctx);
+
+  let best = prediction.reduce((a,b)=> a.probability>b.probability?a:b);
 
   document.getElementById("result").innerText =
-    prediction[0].className + " : " +
-    prediction[0].probability.toFixed(2);
+    best.className + " : " + best.probability.toFixed(2);
 
-  window.requestAnimationFrame(loop);
+  // ===== คำสั่งควบคุม =====
+  if (best.className === "HandUp") send("F");
+  else if (best.className === "HandLeft") send("L");
+  else if (best.className === "HandRight") send("R");
+  else send("S");
+
+  requestAnimationFrame(loop);
 }
 </script>
 
