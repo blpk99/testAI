@@ -13,7 +13,6 @@
   <p id="status">Status: Not connected</p>
   <p id="result">---</p>
 
-  <!-- TensorFlow + Teachable Machine -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
 
@@ -23,29 +22,22 @@ let characteristic;
 let webcam;
 
 const MODEL_URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
-const THRESHOLD = 0.80;   // ความมั่นใจ 80%
+const THRESHOLD = 0.8;
 
-// ================= Bluetooth =================
 async function connect() {
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "BBC micro:bit" }],
-      optionalServices: [0xFFE0]
-    });
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ namePrefix: "BBC micro:bit" }],
+    optionalServices: [0xFFE0]
+  });
 
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(0xFFE0);
-    characteristic = await service.getCharacteristic(0xFFE1);
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(0xFFE0);
+  characteristic = await service.getCharacteristic(0xFFE1);
 
-    document.getElementById("status").innerText = "Status: Connected ✅";
-    await loadModel();
-
-  } catch (err) {
-    alert("Bluetooth error: " + err);
-  }
+  document.getElementById("status").innerText = "Status: Connected";
+  loadModel();
 }
 
-// ================= Load AI =================
 async function loadModel() {
   model = await tmImage.load(
     MODEL_URL + "model.json",
@@ -54,44 +46,34 @@ async function loadModel() {
   startCamera();
 }
 
-// ================= Camera =================
 async function startCamera() {
   webcam = new tmImage.Webcam(224, 224, true);
-  await webcam.setup();      // ขอสิทธิ์กล้อง
+  await webcam.setup();
   await webcam.play();
-
   document.body.appendChild(webcam.canvas);
-  window.requestAnimationFrame(loop);
-}
-
-// ================= AI Loop =================
-async function loop() {
-  webcam.update();
-  const predictions = await model.predict(webcam.canvas);
-
-  // ใช้คลาสที่มีค่ามากที่สุด
-  let best = predictions[0];
-  for (let p of predictions) {
-    if (p.probability > best.probability) best = p;
-  }
-
-  document.getElementById("result").innerText =
-    best.className + " : " + (best.probability * 100).toFixed(1) + "%";
-
-  if (best.className === "HandUp" && best.probability > THRESHOLD) {
-    send("F");   // เดินหน้า
-  } else {
-    send("S");   // หยุด
-  }
-
   requestAnimationFrame(loop);
 }
 
-// ================= Send Command =================
+async function loop() {
+  webcam.update();
+  const preds = await model.predict(webcam.canvas);
+  let best = preds[0];
+  for (let p of preds) if (p.probability > best.probability) best = p;
+
+  document.getElementById("result").innerText =
+    best.className + " " + (best.probability * 100).toFixed(1) + "%";
+
+  if (best.className === "HandUp" && best.probability > THRESHOLD) {
+    send("F");
+  } else {
+    send("S");
+  }
+  requestAnimationFrame(loop);
+}
+
 function send(cmd) {
   if (!characteristic) return;
-  const data = new TextEncoder().encode(cmd);
-  characteristic.writeValue(data);
+  characteristic.writeValue(new TextEncoder().encode(cmd));
 }
 </script>
 </body>
