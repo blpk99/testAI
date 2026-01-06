@@ -3,78 +3,45 @@
 <head>
   <meta charset="utf-8">
   <title>AI Trash Bin</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-
 <body>
-  <h2>🗑️ AI Trash Bin</h2>
 
-  <button onclick="connect()">🔵 Connect micro:bit</button>
-  <p id="status">Status: Not connected</p>
-  <p id="result">---</p>
+<h2>AI Trash Bin (Hand Up Detection)</h2>
+<button onclick="init()">Start Camera</button>
+<p id="result">---</p>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
-let model;
-let characteristic;
-let webcam;
+const URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
+let model, webcam;
 
-const MODEL_URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
-const THRESHOLD = 0.8;
+async function init() {
+  const modelURL = URL + "model.json";
+  const metadataURL = URL + "metadata.json";
 
-async function connect() {
-  const device = await navigator.bluetooth.requestDevice({
-    filters: [{ namePrefix: "BBC micro:bit" }],
-    optionalServices: [0xFFE0]
-  });
+  model = await tmImage.load(modelURL, metadataURL);
 
-  const server = await device.gatt.connect();
-  const service = await server.getPrimaryService(0xFFE0);
-  characteristic = await service.getCharacteristic(0xFFE1);
-
-  document.getElementById("status").innerText = "Status: Connected";
-  loadModel();
-}
-
-async function loadModel() {
-  model = await tmImage.load(
-    MODEL_URL + "model.json",
-    MODEL_URL + "metadata.json"
-  );
-  startCamera();
-}
-
-async function startCamera() {
-  webcam = new tmImage.Webcam(224, 224, true);
+  webcam = new tmImage.Webcam(300, 300, true);
   await webcam.setup();
   await webcam.play();
+
   document.body.appendChild(webcam.canvas);
-  requestAnimationFrame(loop);
+  window.requestAnimationFrame(loop);
 }
 
 async function loop() {
   webcam.update();
-  const preds = await model.predict(webcam.canvas);
-  let best = preds[0];
-  for (let p of preds) if (p.probability > best.probability) best = p;
+  const prediction = await model.predict(webcam.canvas);
 
   document.getElementById("result").innerText =
-    best.className + " " + (best.probability * 100).toFixed(1) + "%";
+    prediction[0].className + " : " +
+    prediction[0].probability.toFixed(2);
 
-  if (best.className === "HandUp" && best.probability > THRESHOLD) {
-    send("F");
-  } else {
-    send("S");
-  }
-  requestAnimationFrame(loop);
-}
-
-function send(cmd) {
-  if (!characteristic) return;
-  characteristic.writeValue(new TextEncoder().encode(cmd));
+  window.requestAnimationFrame(loop);
 }
 </script>
+
 </body>
 </html>
