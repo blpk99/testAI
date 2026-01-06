@@ -13,7 +13,12 @@
 
 <p id="result">---</p>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+<!-- ✅ tfjs ที่ถูกต้อง -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@3.21.0"></script>
+
+<!-- ✅ Teachable Machine Pose -->
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
 
 <script>
@@ -39,8 +44,11 @@ function send(cmd) {
     characteristic.writeValue(new TextEncoder().encode(cmd + "\n"));
 }
 
-// ---------- Pose AI ----------
+// ---------- Pose ----------
 async function init() {
+  await tf.setBackend("webgl");   // สำคัญ
+  await tf.ready();
+
   model = await tmPose.load(
     MODEL_URL + "model.json",
     MODEL_URL + "metadata.json"
