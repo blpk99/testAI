@@ -1,31 +1,27 @@
 <!DOCTYPE html>
-<html lang="th">
+<html>
 <head>
-<meta charset="utf-8">
-<title>AI Trash Bin (Pose)</title>
+  <meta charset="utf-8">
+  <title>AI Trash Bin – Image Control</title>
 </head>
 <body>
 
-<h2>AI Trash Bin – Pose Control</h2>
+<h2>AI Trash Bin – Image Control</h2>
 
 <button onclick="connect()">🔵 Connect micro:bit</button>
-<button onclick="init()">📷 Start Camera</button>
+<button onclick="start()">📷 Start Camera</button>
 
 <p id="result">---</p>
 
-<!-- ✅ tfjs ที่ถูกต้อง -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.21.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.21.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@3.21.0"></script>
-
-<!-- ✅ Teachable Machine Pose -->
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
-const MODEL_URL = "https://teachablemachine.withgoogle.com/models/x3r1TSRf3/";
-let model, webcam, ctx, characteristic;
 
-// ---------- Bluetooth ----------
+const MODEL_URL = "PUT_YOUR_MODEL_URL_HERE/"; // ใส่ลิงก์โมเดลที่คุณได้จาก TM
+let model, webcam, characteristic;
+
+// -------- Bluetooth -----------
 async function connect() {
   const device = await navigator.bluetooth.requestDevice({
     filters: [{ namePrefix: "BBC micro:bit" }],
@@ -36,66 +32,55 @@ async function connect() {
   const service = await server.getPrimaryService(0xFFE0);
   characteristic = await service.getCharacteristic(0xFFE1);
 
-  document.getElementById("result").innerText = "Bluetooth Connected";
+  document.getElementById("result").innerText = "Bluetooth: connected";
 }
 
-function send(cmd) {
-  if (characteristic)
-    characteristic.writeValue(new TextEncoder().encode(cmd + "\n"));
-}
-
-// ---------- Pose ----------
-async function init() {
-  await tf.setBackend("webgl");   // สำคัญ
-  await tf.ready();
-
-  model = await tmPose.load(
+// -------- Start Camera + AI -----------
+async function start() {
+  model = await tmImage.load(
     MODEL_URL + "model.json",
     MODEL_URL + "metadata.json"
   );
 
-  webcam = new tmPose.Webcam(300, 300, true);
+  webcam = new tmImage.Webcam(300, 300, true);
   await webcam.setup();
   await webcam.play();
 
-  const canvas = document.createElement("canvas");
-  canvas.width = 300;
-  canvas.height = 300;
-  ctx = canvas.getContext("2d");
-
   document.body.appendChild(webcam.canvas);
-  document.body.appendChild(canvas);
 
   loop();
 }
 
 async function loop() {
   webcam.update();
+  const prediction = await model.predict(webcam.canvas);
 
-  const { pose, posenetOutput } =
-    await model.estimatePose(webcam.canvas);
-
-  const prediction =
-    await model.predict(posenetOutput);
-
-  ctx.drawImage(webcam.canvas, 0, 0);
-  if (pose) tmPose.drawPose(pose, ctx);
-
-  let best = prediction.reduce((a,b)=>
+  let best = prediction.reduce((a, b) =>
     a.probability > b.probability ? a : b
   );
 
   document.getElementById("result").innerText =
-    best.className + " " + best.probability.toFixed(2);
+    best.className + " : " + best.probability.toFixed(2);
 
-  if (best.className === "HandUp") send("F");
-  else if (best.className === "HandLeft") send("L");
-  else if (best.className === "HandRight") send("R");
-  else send("S");
+  // ส่งคำสั่งไป micro:bit
+  sendCommand(best.className);
 
   requestAnimationFrame(loop);
 }
-</script>
 
+// -------- ส่งคำสั่งไป micro:bit -----------
+function sendCommand(label) {
+  if (!characteristic) return;
+
+  let cmd = "S"; // ค่า default = หยุด
+
+  if (label === "HandUp") cmd = "F";
+  else if (label === "HandLeft") cmd = "L";
+  else if (label === "HandRight") cmd = "R";
+
+  characteristic.writeValue(new TextEncoder().encode(cmd));
+}
+
+</script>
 </body>
 </html>
