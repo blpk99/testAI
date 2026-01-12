@@ -3,50 +3,62 @@
 <head>
   <meta charset="utf-8">
   <title>AI Trash Bin – Image Control</title>
+  <style>
+    body { font-family: Arial; text-align: center; margin-top: 30px; }
+    button { padding: 12px; margin: 10px; font-size: 16px; }
+  </style>
 </head>
 <body>
 
 <h2>AI Trash Bin – Image Control</h2>
 
-<button onclick="connect()">🔵 Connect micro:bit</button>
-<button onclick="startAI()">📷 Start Camera</button>
+<button onclick="connectMicrobit()">🔵 Connect micro:bit</button>
+<button onclick="startAI()">📷 Start Camera + AI</button>
 
-<p id="result">---</p>
+<p id="status">Status: Not connected</p>
 
-<!-- ใช้ TFJS เวอร์ชันที่รองรับ TM Image -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
+// ----------- micro:bit UART UUIDs -----------
+const UART_SERVICE   = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_TX        = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // Web → micro:bit
+let txChar;
 
-const MODEL_URL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/"; 
-let model, webcam, characteristic;
+// ----------- Teachable Machine -----------
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/";
 
+let model, webcam;
 let lastCmd = "";
 let lastSendTime = 0;
 
-// ------------ Bluetooth ------------
-async function connect() {
-  const device = await navigator.bluetooth.requestDevice({
-    filters: [{ namePrefix: "BBC micro:bit" }],
-    optionalServices: [0xFFE0]
-  });
+// ----------- Connect to micro:bit -----------
+async function connectMicrobit() {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [UART_SERVICE] }]
+    });
 
-  const server = await device.gatt.connect();
-  const service = await server.getPrimaryService(0xFFE0);
-  characteristic = await service.getCharacteristic(0xFFE1);
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE);
 
-  document.getElementById("result").innerText = "Bluetooth Connected";
+    txChar = await service.getCharacteristic(UART_TX);
+
+    document.getElementById("status").innerText = "Status: micro:bit Connected ✔";
+  }
+  catch (err) {
+    document.getElementById("status").innerText = "Bluetooth Error: " + err;
+  }
 }
 
-// ------------ Start Camera + AI ------------
+// ----------- Start Camera + AI -----------
 async function startAI() {
+  document.getElementById("status").innerText = "Loading AI model...";
+
   await tf.ready();
 
-  model = await tmImage.load(
-    MODEL_URL + "model.json",
-    MODEL_URL + "metadata.json"
-  );
+  model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
 
   webcam = new tmImage.Webcam(300, 300, true);
   await webcam.setup();
@@ -54,18 +66,20 @@ async function startAI() {
 
   document.body.appendChild(webcam.canvas);
 
+  document.getElementById("status").innerText = "AI Running...";
   loop();
 }
 
+// ----------- AI Loop -----------
 async function loop() {
   webcam.update();
   const prediction = await model.predict(webcam.canvas);
 
   let best = prediction.reduce((a, b) =>
-    a.probability > b.probability ? a : b
+      a.probability > b.probability ? a : b
   );
 
-  document.getElementById("result").innerText =
+  document.getElementById("status").innerText =
     best.className + " : " + best.probability.toFixed(2);
 
   sendCommand(best.className);
@@ -73,31 +87,26 @@ async function loop() {
   requestAnimationFrame(loop);
 }
 
-// ------------ ส่งคำสั่งไป micro:bit ------------
+// ----------- Send Command to micro:bit -----------
 function sendCommand(label) {
-  if (!characteristic) return;
+  if (!txChar) return;
 
   let cmd = "S";
 
   if (label === "HandUp") cmd = "F";
   else if (label === "HandLeft") cmd = "L";
   else if (label === "HandRight") cmd = "R";
-  else cmd = "S";
 
+  // กันส่งซ้ำบ่อยเกิน
   const now = Date.now();
-
-  // ส่งเฉพาะเมื่อเปลี่ยนสถานะ หรือรอเกิน 500ms
-  if (cmd !== lastCmd || now - lastSendTime > 500) {
-    const data = new TextEncoder().encode(cmd + "\n");
-    characteristic.writeValue(data);
+  if (cmd !== lastCmd || now - lastSendTime > 400) {
+    txChar.writeValue(new TextEncoder().encode(cmd + "\n"));
     lastCmd = cmd;
     lastSendTime = now;
   }
 }
 
-
 </script>
+
 </body>
 </html>
-
-
