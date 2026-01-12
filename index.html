@@ -47,15 +47,18 @@ async function connectMicrobit() {
 
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(UART_SERVICE);
+
+    // ดึง TX แบบ write-only
     txChar = await service.getCharacteristic(UART_TX);
 
     document.getElementById("status").innerText =
       "micro:bit Connected ✔ UART Ready";
 
-  } catch (err) {
-    document.getElementById("status").innerText = "Error: " + err;
+  } catch (error) {
+    document.getElementById("status").innerText = "Error: " + error;
   }
 }
+
 
 // ------------------------------
 //  เริ่ม AI + กล้อง
@@ -130,3 +133,4 @@ function sendCmd(label) {
 
 </body>
 </html>
+
