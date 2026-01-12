@@ -2,25 +2,21 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AI Trash Bin – Stable BLE + Pose AI</title>
-
-  <!-- TFJS -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
-
-  <!-- TeachableMachine POSE (ถูกต้องที่สุดสำหรับ HandUp/Left/Right) -->
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
-
+  <title>AI Trash Bin – Stable BLE Queue</title>
 </head>
 
 <body>
 
-<h2>AI Trash Bin – Pose AI + Bluetooth Stable</h2>
+<h2>AI Trash Bin – Image + Bluetooth (Fixed)</h2>
 
 <button onclick="connectMicrobit()">🔵 Connect micro:bit</button>
-<button onclick="startAI()">📷 Start AI Pose Detection</button>
+<button onclick="startAI()">📷 Start Camera + AI</button>
 
 <p id="status">Status: Not connected</p>
 <p id="result">---</p>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
 // --------------------------------------------------
@@ -37,9 +33,9 @@ let model, webcam;
 let lastCmd = "";
 let lastSendTime = 0;
 
-// ------------------------
-// BLE Write Queue
-// ------------------------
+// --------------------------------------------------
+// BLE QUEUE
+// --------------------------------------------------
 let bleQueue = [];
 let bleBusy = false;
 
@@ -55,18 +51,16 @@ async function processBLEQueue() {
   const msg = bleQueue.shift();
 
   try {
-    // ใช้ writeValue() แทน writeValueWithoutResponse()
     await txChar.writeValue(new TextEncoder().encode(msg));
   } catch (e) {
-    console.warn("BLE write failed:", e);
+    console.warn("BLE Write Failed:", e);
   }
 
   setTimeout(() => {
     bleBusy = false;
     processBLEQueue();
-  }, 150); // รอ 150ms ป้องกัน GATT error
+  }, 150);
 }
-
 
 // --------------------------------------------------
 // CONNECT MICROBIT
@@ -80,43 +74,51 @@ async function connectMicrobit() {
 
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(UART_SERVICE);
+    
+    // 🔥สำคัญ — เปิด permission ก่อน
     txChar = await service.getCharacteristic(UART_TX);
+    await txChar.writeValue(new TextEncoder().encode("READY\n"));
 
-    document.getElementById("status").innerText =
-      "micro:bit Connected ✔ UART Ready";
+    document.getElementById("status").innerText = "micro:bit Connected ✔ UART Ready";
 
+    startHeartbeat();
   } catch (err) {
     document.getElementById("status").innerText = "Connect Error: " + err;
   }
 }
 
+// --------------------------------------------------
+// HEARTBEAT
+// --------------------------------------------------
+function startHeartbeat() {
+  setInterval(() => {
+    if (!device || !device.gatt.connected) return;
+    if (bleQueue.length === 0 && !bleBusy) queueBLE("P");
+  }, 1000);
+}
 
 // --------------------------------------------------
-// START AI POSE
+// START AI
 // --------------------------------------------------
 async function startAI() {
-  document.getElementById("status").innerText = "Loading Pose model...";
+  document.getElementById("status").innerText = "Loading model...";
 
   await tf.ready();
 
-  // IMPORTANT: use tmPose not tmImage
-  model = await tmPose.load(
+  model = await tmImage.load(
     MODEL_URL + "model.json",
     MODEL_URL + "metadata.json"
   );
 
-  document.getElementById("status").innerText = "Model Loaded ✔ Starting camera...";
+  document.getElementById("status").innerText = "Model loaded! Starting camera...";
 
-  // Create webcam
-  webcam = new tmPose.Webcam(300, 300, true);
+  webcam = new tmImage.Webcam(300, 300, true);
   await webcam.setup();
   await webcam.play();
-
   document.body.appendChild(webcam.canvas);
 
   loop();
 }
-
 
 // --------------------------------------------------
 // AI LOOP
@@ -124,8 +126,7 @@ async function startAI() {
 async function loop() {
   webcam.update();
 
-  const { posenetOutput } = await model.estimatePose(webcam.canvas);
-  const prediction = await model.predict(posenetOutput);
+  const prediction = await model.predict(webcam.canvas);
 
   const best = prediction.reduce((a, b) =>
     a.probability > b.probability ? a : b
@@ -139,27 +140,25 @@ async function loop() {
   requestAnimationFrame(loop);
 }
 
-
 // --------------------------------------------------
-// SEND COMMAND VIA QUEUE
+// SEND COMMAND TO MICROBIT
 // --------------------------------------------------
 function sendCmd(label) {
   if (!txChar || !device.gatt.connected) return;
 
   let cmd = "S";
-  if (label === "HandUp") cmd = "F";
-  else if (label === "HandLeft") cmd = "L";
-  else if (label === "HandRight") cmd = "R";
+  if (label === "HandUp")    cmd = "F";
+  if (label === "HandLeft")  cmd = "L";
+  if (label === "HandRight") cmd = "R";
 
   const now = Date.now();
 
-  if (cmd !== lastCmd || now - lastSendTime > 400) {
+  if (cmd !== lastCmd || now - lastSendTime > 700) {
     queueBLE(cmd);
     lastCmd = cmd;
     lastSendTime = now;
   }
 }
-
 </script>
 
 </body>
