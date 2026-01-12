@@ -23,7 +23,6 @@
 <p id="status">Status: Not connected</p>
 <p id="result">---</p>
 
-<!-- TensorFlow + Teachable Machine -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
@@ -33,10 +32,13 @@
 // --------------------------------------------------
 const MODEL_URL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/";
 
-const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; 
-const UART_TX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+// UART UUID
+const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_RX =      "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // write
+const UART_TX =      "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // notify
 
 let device = null;
+let rxChar = null;
 let txChar = null;
 let model, webcam;
 
@@ -44,31 +46,31 @@ let model, webcam;
 let bleQueue = [];
 let bleBusy = false;
 
-// -----------------------------
-// BLE QUEUE SYSTEM
-// -----------------------------
+// --------------------------------------------------
+// BLE QUEUE
+// --------------------------------------------------
 function queueBLE(message) {
   bleQueue.push(message + "#");
   processBLE();
 }
 
 async function processBLE() {
-  if (bleBusy || bleQueue.length === 0 || !txChar) return;
+  if (bleBusy || bleQueue.length === 0 || !rxChar) return;
 
   bleBusy = true;
   const msg = bleQueue.shift();
 
   try {
-    await txChar.writeValue(new TextEncoder().encode(msg));
+    await rxChar.writeValue(new TextEncoder().encode(msg));
     console.log("SEND:", msg);
   } catch (e) {
-    console.warn("BLE Write Error:", e);
+    console.error("BLE Write Error:", e);
   }
 
   setTimeout(() => {
     bleBusy = false;
     processBLE();
-  }, 150);
+  }, 120);
 }
 
 // --------------------------------------------------
@@ -83,10 +85,17 @@ async function connectMicrobit() {
 
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(UART_SERVICE);
-    txChar = await service.getCharacteristic(UART_TX);
+
+    rxChar = await service.getCharacteristic(UART_RX); // write
+    txChar = await service.getCharacteristic(UART_TX); // notify
+
+    await txChar.startNotifications();
+    txChar.addEventListener("characteristicvaluechanged", event => {
+      const value = new TextDecoder().decode(event.target.value);
+      console.log("MICROBIT:", value);
+    });
 
     document.getElementById("status").innerText = "Connected ✔ Ready";
-    console.log("BLE Ready");
 
   } catch (err) {
     document.getElementById("status").innerText = "Connect Error: " + err;
@@ -101,13 +110,7 @@ async function startAI() {
   document.getElementById("status").innerText = "Loading model...";
 
   await tf.ready();
-
-  model = await tmImage.load(
-    MODEL_URL + "model.json",
-    MODEL_URL + "metadata.json"
-  );
-
-  document.getElementById("status").innerText = "Model loaded. Starting camera...";
+  model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
 
   webcam = new tmImage.Webcam(300, 300, true);
   await webcam.setup();
@@ -124,10 +127,7 @@ async function loop() {
   webcam.update();
 
   const prediction = await model.predict(webcam.canvas);
-
-  const best = prediction.reduce((a, b) =>
-    a.probability > b.probability ? a : b
-  );
+  const best = prediction.reduce((a, b) => a.probability > b.probability ? a : b);
 
   document.getElementById("result").innerText =
     `${best.className} : ${best.probability.toFixed(2)}`;
@@ -137,10 +137,10 @@ async function loop() {
 }
 
 // --------------------------------------------------
-// SEND COMMAND TO micro:bit
+// SEND CMD TO MICROBIT
 // --------------------------------------------------
 function sendCmd(label) {
-  if (!txChar || !device.gatt.connected) return;
+  if (!rxChar || !device.gatt.connected) return;
 
   let cmd = "S";
   if (label === "HandUp") cmd = "F";
