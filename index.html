@@ -9,19 +9,23 @@
 <h2>AI Trash Bin – Image Control</h2>
 
 <button onclick="connect()">🔵 Connect micro:bit</button>
-<button onclick="start()">📷 Start Camera</button>
+<button onclick="startAI()">📷 Start Camera</button>
 
 <p id="result">---</p>
 
+<!-- ใช้ TFJS เวอร์ชันที่รองรับ TM Image -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
 
-const MODEL_URL = "https://teachablemachine.withgoogle.com/models/6eouh9rGc/"; // ใส่ลิงก์โมเดลที่คุณได้จาก TM
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/6eouh9rGc/"; 
 let model, webcam, characteristic;
 
-// -------- Bluetooth -----------
+let lastCmd = "";
+let lastSendTime = 0;
+
+// ------------ Bluetooth ------------
 async function connect() {
   const device = await navigator.bluetooth.requestDevice({
     filters: [{ namePrefix: "BBC micro:bit" }],
@@ -32,11 +36,13 @@ async function connect() {
   const service = await server.getPrimaryService(0xFFE0);
   characteristic = await service.getCharacteristic(0xFFE1);
 
-  document.getElementById("result").innerText = "Bluetooth: connected";
+  document.getElementById("result").innerText = "Bluetooth Connected";
 }
 
-// -------- Start Camera + AI -----------
-async function start() {
+// ------------ Start Camera + AI ------------
+async function startAI() {
+  await tf.ready();
+
   model = await tmImage.load(
     MODEL_URL + "model.json",
     MODEL_URL + "metadata.json"
@@ -62,27 +68,31 @@ async function loop() {
   document.getElementById("result").innerText =
     best.className + " : " + best.probability.toFixed(2);
 
-  // ส่งคำสั่งไป micro:bit
   sendCommand(best.className);
 
   requestAnimationFrame(loop);
 }
 
-// -------- ส่งคำสั่งไป micro:bit -----------
+// ------------ ส่งคำสั่งไป micro:bit ------------
 function sendCommand(label) {
   if (!characteristic) return;
 
-  let cmd = "S"; // ค่า default = หยุด
+  let cmd = "S";
 
-  if (label === "ยกมืแ") cmd = "F";
+  if (label === "HandUp") cmd = "F";
   else if (label === "HandLeft") cmd = "L";
   else if (label === "HandRight") cmd = "R";
+  else cmd = "S";
 
-  characteristic.writeValue(new TextEncoder().encode(cmd));
+  // กันการส่งซ้ำเร็วเกิน
+  const now = Date.now();
+  if (cmd !== lastCmd || now - lastSendTime > 500) {
+    characteristic.writeValue(new TextEncoder().encode(cmd));
+    lastCmd = cmd;
+    lastSendTime = now;
+  }
 }
 
 </script>
 </body>
 </html>
-
-
