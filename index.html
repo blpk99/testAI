@@ -2,21 +2,25 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AI Trash Bin – Stable BLE Queue</title>
+  <title>AI Trash Bin – Stable BLE + Pose AI</title>
+
+  <!-- TFJS -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+
+  <!-- TeachableMachine POSE (ถูกต้องที่สุดสำหรับ HandUp/Left/Right) -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+
 </head>
 
 <body>
 
-<h2>AI Trash Bin – Image + Bluetooth (Stable)</h2>
+<h2>AI Trash Bin – Pose AI + Bluetooth Stable</h2>
 
 <button onclick="connectMicrobit()">🔵 Connect micro:bit</button>
-<button onclick="startAI()">📷 Start Camera + AI</button>
+<button onclick="startAI()">📷 Start AI Pose Detection</button>
 
 <p id="status">Status: Not connected</p>
 <p id="result">---</p>
-
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
 // --------------------------------------------------
@@ -39,13 +43,11 @@ let lastSendTime = 0;
 let bleQueue = [];
 let bleBusy = false;
 
-// จัดคิวคำสั่ง
 function queueBLE(message) {
   bleQueue.push(message + "\n");
   processBLEQueue();
 }
 
-// process คิวทีละคำสั่ง
 async function processBLEQueue() {
   if (bleBusy || bleQueue.length === 0 || !txChar) return;
 
@@ -53,15 +55,16 @@ async function processBLEQueue() {
   const msg = bleQueue.shift();
 
   try {
-    await txChar.writeValueWithoutResponse(new TextEncoder().encode(msg));
+    // ใช้ writeValue() แทน writeValueWithoutResponse()
+    await txChar.writeValue(new TextEncoder().encode(msg));
   } catch (e) {
     console.warn("BLE write failed:", e);
   }
 
   setTimeout(() => {
     bleBusy = false;
-    processBLEQueue(); // ส่งคำสั่งถัดไป
-  }, 120); // เว้น 120ms ต่อคำสั่ง
+    processBLEQueue();
+  }, 150); // รอ 150ms ป้องกัน GATT error
 }
 
 
@@ -82,8 +85,6 @@ async function connectMicrobit() {
     document.getElementById("status").innerText =
       "micro:bit Connected ✔ UART Ready";
 
-    startHeartbeat();
-
   } catch (err) {
     document.getElementById("status").innerText = "Connect Error: " + err;
   }
@@ -91,37 +92,23 @@ async function connectMicrobit() {
 
 
 // --------------------------------------------------
-// HEARTBEAT แบบไม่ชนกับ AI
-// --------------------------------------------------
-function startHeartbeat() {
-  setInterval(() => {
-    if (!device || !device.gatt.connected) return;
-
-    // ส่ง heartbeat เฉพาะตอนคิวว่าง
-    if (bleQueue.length === 0 && !bleBusy) {
-      queueBLE("P");
-    }
-
-  }, 1000);
-}
-
-
-// --------------------------------------------------
-// START AI
+// START AI POSE
 // --------------------------------------------------
 async function startAI() {
-  document.getElementById("status").innerText = "Loading model...";
+  document.getElementById("status").innerText = "Loading Pose model...";
 
   await tf.ready();
 
-  model = await tmImage.load(
+  // IMPORTANT: use tmPose not tmImage
+  model = await tmPose.load(
     MODEL_URL + "model.json",
     MODEL_URL + "metadata.json"
   );
 
-  document.getElementById("status").innerText = "Model loaded! Starting camera...";
+  document.getElementById("status").innerText = "Model Loaded ✔ Starting camera...";
 
-  webcam = new tmImage.Webcam(300, 300, true);
+  // Create webcam
+  webcam = new tmPose.Webcam(300, 300, true);
   await webcam.setup();
   await webcam.play();
 
@@ -137,7 +124,8 @@ async function startAI() {
 async function loop() {
   webcam.update();
 
-  const prediction = await model.predict(webcam.canvas);
+  const { posenetOutput } = await model.estimatePose(webcam.canvas);
+  const prediction = await model.predict(posenetOutput);
 
   const best = prediction.reduce((a, b) =>
     a.probability > b.probability ? a : b
@@ -165,12 +153,13 @@ function sendCmd(label) {
 
   const now = Date.now();
 
-  if (cmd !== lastCmd || now - lastSendTime > 500) {
+  if (cmd !== lastCmd || now - lastSendTime > 400) {
     queueBLE(cmd);
     lastCmd = cmd;
     lastSendTime = now;
   }
 }
+
 </script>
 
 </body>
