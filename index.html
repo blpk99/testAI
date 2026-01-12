@@ -1,16 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>AI + micro:bit Bluetooth Controller</title>
-<style>
-body { font-family: Arial; }
-button { padding:8px 14px; margin:5px; }
-#log {
-    width: 100%; height: 180px; background:#000; color:#0f0;
-    padding:10px; overflow-y:scroll; white-space:pre-wrap;
-}
-</style>
+<meta charset="utf-8">
+<title>AI + micro:bit Controller</title>
 </head>
 <body>
 
@@ -24,89 +16,69 @@ button { padding:8px 14px; margin:5px; }
 <button onclick="sendCmd('R')">Send R</button>
 
 <p id="status">Status: Not connected</p>
-<video id="video" width="320" height="240" autoplay playsinline></video>
-
-<div id="log"></div>
+<div id="log" style="background:#111;color:#0f0;height:150px;overflow:auto;padding:10px"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@1.1/dist/teachablemachine-image.min.js"></script>
+
+<!-- ✔ เวอร์ชันที่รองรับ tmImage แบบ Global -->
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
-const modelURL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/model.json";
-const metadataURL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/metadata.json";
+const MODEL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/";
 
 let model;
 let txChar = null;
 
 const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const UART_RX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // write
-const UART_TX      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // notify
+const UART_RX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";  // write only
 
-/* -------- CONNECT -------- */
+function log(t){
+  const box=document.getElementById("log");
+  box.innerText+=t+"\n";
+  box.scrollTop=box.scrollHeight;
+}
+
+/* CONNECT micro:bit */
 async function connectMicrobit() {
-    try {
-        const device = await navigator.bluetooth.requestDevice({
-            filters: [{ namePrefix: "BBC micro:bit" }],
-            optionalServices: [UART_SERVICE]
-        });
-
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(UART_SERVICE);
-
-        txChar = await service.getCharacteristic(UART_RX);
-
-        document.getElementById("status").innerText = "Connected ✓";
-        log("Connected");
-
-    } catch (err) {
-        log("Connect Error: " + err);
-    }
-}
-
-/* -------- LOAD MODEL -------- */
-async function startAI() {
-    model = await window.tmImage.load(modelURL, metadataURL); // ✔ FIXED
-    log("Model loaded!");
-    startCamera();
-}
-
-/* -------- CAMERA -------- */
-async function startCamera() {
-    const video = document.getElementById("video");
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-    predictLoop();
-}
-
-/* -------- AI LOOP -------- */
-async function predictLoop() {
-    const prediction = await model.predict(video);
-
-    prediction.forEach(p => {
-        if (p.className === "HandUp" && p.probability > 0.80) sendCmd("F");
-        if (p.className === "HandLeft" && p.probability > 0.80) sendCmd("L");
-        if (p.className === "HandRight" && p.probability > 0.80) sendCmd("R");
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix:"BBC micro:bit" }],
+      optionalServices: [UART_SERVICE]
     });
 
-    requestAnimationFrame(predictLoop);
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE);
+    txChar = await service.getCharacteristic(UART_RX);
+
+    document.getElementById("status").innerText = "Connected ✓";
+    log("Connected to micro:bit");
+
+  } catch (err) {
+    log("Connect Error: " + err);
+  }
 }
 
-/* -------- SEND COMMAND -------- */
+/* LOAD MODEL */
+async function startAI() {
+  try {
+    model = await tmImage.load(MODEL + "model.json", MODEL + "metadata.json");
+    log("Model loaded!");
+
+  } catch (err) {
+    log("Load model error: " + err);
+    return;
+  }
+}
+
+/* SEND COMMAND */
 function sendCmd(cmd) {
-    if (!txChar) return log("Not Connected!");
+  if (!txChar) return log("Not connected!");
 
-    let data = new TextEncoder().encode(cmd + "\n");
+  let data = new TextEncoder().encode(cmd + "\n");
 
-    txChar.writeValueWithoutResponse(data)
-        .then(() => log("SEND: " + cmd))
-        .catch(err => log("Write Error: " + err));
-}
-
-/* -------- LOGGER -------- */
-function log(t) {
-    const box = document.getElementById("log");
-    box.textContent += t + "\n";
-    box.scrollTop = box.scrollHeight;
+  txChar.writeValueWithoutResponse(data)
+    .then(() => log("Sent: " + cmd))
+    .catch(err => log("Write ERR: " + err));
 }
 </script>
 
