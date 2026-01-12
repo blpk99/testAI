@@ -114,23 +114,22 @@ function sendCmd(label) {
   if (!txChar) return;
 
   let cmd = "S";
-
-  if (label === "HandUp")   cmd = "F";
-  else if (label === "HandLeft")  cmd = "L";
+  if (label === "HandUp") cmd = "F";
+  else if (label === "HandLeft") cmd = "L";
   else if (label === "HandRight") cmd = "R";
-  else cmd = "S"; // default = หยุด
 
   const now = Date.now();
 
-  // กันไม่ให้ส่งซ้ำเร็วเกินไป
   if (cmd !== lastCmd || (now - lastSendTime) > 400) {
-    txChar.writeValue(new TextEncoder().encode(cmd + "\n"));
+    txChar.writeValueWithoutResponse(new TextEncoder().encode(cmd + "\n"));
     lastCmd = cmd;
     lastSendTime = now;
   }
 }
+
 </script>
 
 </body>
 </html>
+
 
