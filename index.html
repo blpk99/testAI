@@ -1,121 +1,133 @@
+
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8" />
-<title>AI + micro:bit Pose Control</title>
-
-<!-- Teachable Machine Pose -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
-
-<style>
-button { padding:10px; margin:5px; font-size:16px; }
-#label { font-size:22px; font-weight:bold; color:blue; }
-</style>
+  <meta charset="utf-8">
+  <title>AI Trash Bin – Full Control</title>
 </head>
-
 <body>
-<h2>AI Pose + micro:bit Bluetooth</h2>
 
-<button onclick="connectBT()">Connect micro:bit</button>
-<button onclick="startAI()">Start AI</button>
+<h2>AI Trash Bin – Image + Bluetooth Control</h2>
 
-<br><br>
+<button onclick="connectMicrobit()">🔵 Connect micro:bit</button>
+<button onclick="startAI()">📷 Start Camera + AI</button>
 
-<button onclick="sendCmd('F')">Test F</button>
-<button onclick="sendCmd('L')">Test L</button>
-<button onclick="sendCmd('R')">Test R</button>
+<p id="status">Status: Not connected</p>
+<p id="result">---</p>
 
-<p id="label">Status: -</p>
-
-<video id="webcam" width="300" autoplay playsinline></video>
+<!-- ใช้เวอร์ชัน TFJS + TM ที่รองรับ -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
 <script>
-let device;
-let server;
-let uartService;
-let uartRX;
-let model;
-let webcam;
-let predictedClass = "";
+// ------------------------------
+//  ตั้งค่าลิงก์โมเดลของคุณ
+// ------------------------------
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/";
 
-// ============== BLUETOOTH CONNECT =====================
-async function connectBT() {
-    try {
-        device = await navigator.bluetooth.requestDevice({
-            filters: [{ namePrefix: "BBC micro:bit" }],
-            optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
-        });
+// ------------------------------
+//  micro:bit UART UUID
+// ------------------------------
+const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_TX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
-        server = await device.gatt.connect();
-        uartService = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-        uartRX = await uartService.getCharacteristic("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
+let txChar = null;      // ตัวส่งข้อมูลไป micro:bit
+let model, webcam;
+let lastCmd = "";
+let lastSendTime = 0;
 
-        document.getElementById("label").innerText = "Connected!";
-    } 
-    catch (err) {
-        console.error(err);
-        alert("Bluetooth Error: " + err);
-    }
-}
-
-// ============== SEND COMMAND =====================
-async function sendCmd(cmd) {
-    if (!uartRX) return alert("Not connected!");
-
-    try {
-        await uartRX.writeValue(new TextEncoder().encode(cmd));
-        console.log("SEND:", cmd);
-    } catch (err) {
-        console.error("Write Error:", err);
-    }
-}
-
-// ============== LOAD + START AI =====================
-async function startAI() {
-
-    const URL = "model/"; // เปลี่ยนเป็นโฟลเดอร์โมเดลของคุณ
-
-    model = await tmPose.load(
-        URL + "model.json",
-        URL + "metadata.json"
-    );
-
-    const size = 300;
-    const flip = true;
-
-    webcam = new tmPose.Webcam(size, size, flip);
-    await webcam.setup();
-    await webcam.play();
-
-    document.getElementById("webcam").srcObject = webcam.webcam;
-    window.requestAnimationFrame(loop);
-}
-
-async function loop() {
-    webcam.update();
-    await predict();
-    window.requestAnimationFrame(loop);
-}
-
-// ============== AI PREDICT =====================
-async function predict() {
-    const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
-    const prediction = await model.predict(posenetOutput);
-
-    prediction.forEach(p => {
-        if (p.probability > 0.80) {
-            predictedClass = p.className;
-        }
+// ------------------------------
+//  เชื่อมต่อ micro:bit ผ่าน Bluetooth
+// ------------------------------
+async function connectMicrobit() {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "BBC micro:bit" }],
+      optionalServices: [UART_SERVICE]
     });
 
-    document.getElementById("label").innerText = predictedClass;
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE);
 
-    // ส่งคำสั่งตาม AI
-    if (predictedClass === "HandUp") sendCmd("F");
-    if (predictedClass === "Left") sendCmd("L");
-    if (predictedClass === "Right") sendCmd("R");
+    // ดึง TX แบบ write-only
+    txChar = await service.getCharacteristic(UART_TX);
+
+    document.getElementById("status").innerText =
+      "micro:bit Connected ✔ UART Ready";
+
+  } catch (error) {
+    document.getElementById("status").innerText = "Error: " + error;
+  }
 }
+
+
+// ------------------------------
+//  เริ่ม AI + กล้อง
+// ------------------------------
+async function startAI() {
+  document.getElementById("status").innerText = "Loading model...";
+
+  await tf.ready();
+
+  model = await tmImage.load(
+    MODEL_URL + "model.json",
+    MODEL_URL + "metadata.json"
+  );
+
+  document.getElementById("status").innerText = "Model loaded! Starting camera...";
+
+  // กล้อง 300x300
+  webcam = new tmImage.Webcam(300, 300, true);
+  await webcam.setup();
+  await webcam.play();
+
+  document.body.appendChild(webcam.canvas);
+
+  loop();
+}
+
+// ------------------------------
+//  LOOP คาดการณ์ AI ตลอดเวลา
+// ------------------------------
+async function loop() {
+  webcam.update();
+
+  const prediction = await model.predict(webcam.canvas);
+
+  // หา class ที่ความน่าจะเป็นสูงสุด
+  let best = prediction.reduce((a, b) =>
+    a.probability > b.probability ? a : b
+  );
+
+  document.getElementById("result").innerText =
+    best.className + " : " + best.probability.toFixed(2);
+
+  // ส่งคำสั่ง
+  sendCmd(best.className);
+
+  requestAnimationFrame(loop);
+}
+
+// ------------------------------
+//  ส่งคำสั่งไป micro:bit UART
+// ------------------------------
+function sendCmd(label) {
+  if (!txChar) return;
+
+  let cmd = "S";
+  if (label === "HandUp") cmd = "F";
+  else if (label === "HandLeft") cmd = "L";
+  else if (label === "HandRight") cmd = "R";
+
+  const now = Date.now();
+
+  if (cmd !== lastCmd || (now - lastSendTime) > 400) {
+    txChar.writeValueWithoutResponse(new TextEncoder().encode(cmd + "\n"));
+    lastCmd = cmd;
+    lastSendTime = now;
+  }
+}
+
 </script>
 
 </body>
