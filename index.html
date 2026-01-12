@@ -23,33 +23,36 @@ button { padding:10px; margin:5px; }
 
 <button id="connectBtn">🔵 Connect micro:bit</button>
 <button id="startAI">📷 Start Camera + AI</button>
+<br><br>
+
+<button onclick="sendCmd('F')">⬆ Test Forward (F)</button>
+<button onclick="sendCmd('L')">⬅ Test Left (L)</button>
+<button onclick="sendCmd('R')">➡ Test Right (R)</button>
 
 <div id="status"></div>
 <div id="log"></div>
 
 <video id="video" width="320" height="240" autoplay playsinline></video>
-<canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@1.1/dist/teachablemachine-image.min.js"></script>
 
 <script>
 /* --------------------------------------------------------------------------
    AI MODEL SETTINGS
 -------------------------------------------------------------------------- */
-const modelURL = "https://teachablemachine.withgoogle.com/models/xxxxxx/model.json";
-const metadataURL = "https://teachablemachine.withgoogle.com/models/xxxxxx/metadata.json";
+const modelURL = "https://teachablemachine.withgoogle.com/models/YOUR_MODEL/model.json";
+const metadataURL = "https://teachablemachine.withgoogle.com/models/YOUR_MODEL/metadata.json";
 
-let model, maxPredictions;
+let model;
 
 /* --------------------------------------------------------------------------
    LOAD MODEL
 -------------------------------------------------------------------------- */
 async function loadModel() {
-    document.getElementById("status").innerHTML = "Loading AI Model...";
+    document.getElementById("status").innerText = "Loading AI Model...";
     model = await tmImage.load(modelURL, metadataURL);
-    maxPredictions = model.getTotalClasses();
-    document.getElementById("status").innerHTML = "AI Ready! Starting camera...";
+    document.getElementById("status").innerText = "AI Ready! Starting camera...";
     startCamera();
 }
 
@@ -73,7 +76,7 @@ async function predictLoop() {
     prediction.forEach(p => {
         if (p.className === "HandUp" && p.probability > 0.8) {
             document.getElementById("status").innerHTML = "HandUp : " + p.probability.toFixed(2);
-            sendCmd("F");
+            sendCmd("F");   // ส่ง F เมื่อยกมือ
         }
     });
 
@@ -81,19 +84,15 @@ async function predictLoop() {
 }
 
 /* --------------------------------------------------------------------------
-   BLUETOOTH UUID (micro:bit UART Nordic)
+   BLE UUID (micro:bit UART Nordic)
 -------------------------------------------------------------------------- */
 const UART_SERVICE  = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const UART_TX       = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 const UART_RX       = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
-/* --------------------------------------------------------------------------
-   BLE VARIABLES
--------------------------------------------------------------------------- */
 let bleDevice = null;
 let bleServer = null;
 let bleTxCharacteristic = null;
-let bleRxCharacteristic = null;
 
 let busy = false;
 let queue = [];
@@ -103,52 +102,37 @@ let queue = [];
 -------------------------------------------------------------------------- */
 async function connectMicrobit() {
     try {
-        log("Requesting micro:bit...");
         bleDevice = await navigator.bluetooth.requestDevice({
             filters: [{ namePrefix: "BBC" }],
             optionalServices: [UART_SERVICE],
         });
 
-        bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
-
-        log("Connecting...");
         bleServer = await bleDevice.gatt.connect();
-
         const service = await bleServer.getPrimaryService(UART_SERVICE);
         bleTxCharacteristic = await service.getCharacteristic(UART_TX);
-        bleRxCharacteristic = await service.getCharacteristic(UART_RX);
 
-        await bleRxCharacteristic.startNotifications();
-        bleRxCharacteristic.addEventListener("characteristicvaluechanged", handleRx);
+        document.getElementById("status").innerText = "Connected ✔ UART Ready";
+        log("Connected");
 
-        log("micro:bit Connected ✔ UART Ready");
-    } catch (error) {
-        log("Connect error: " + error);
+    } catch (err) {
+        log("Connect error: " + err);
     }
 }
 
 /* --------------------------------------------------------------------------
-   RECEIVE DATA FROM microbit
--------------------------------------------------------------------------- */
-function handleRx(event) {
-    let text = new TextDecoder().decode(event.target.value);
-    log("RX: " + text);
-}
-
-/* --------------------------------------------------------------------------
-   SEND COMMAND (WITH QUEUE)
+   SEND COMMAND WITH QUEUE
 -------------------------------------------------------------------------- */
 function sendCmd(cmd) {
     queue.push(cmd + "\n");
-    processSendQueue();
+    processQueue();
 }
 
-async function processSendQueue() {
-    if (busy || queue.length === 0 || !bleTxCharacteristic) return;
+async function processQueue() {
+    if (busy || !bleTxCharacteristic || queue.length === 0) return;
 
     busy = true;
     let msg = queue.shift();
-    log("SEND: " + msg);
+    log("SEND: " + msg.trim());
 
     try {
         await bleTxCharacteristic.writeValue(new TextEncoder().encode(msg));
@@ -158,15 +142,8 @@ async function processSendQueue() {
 
     setTimeout(() => {
         busy = false;
-        processSendQueue();
+        processQueue();
     }, 150);
-}
-
-/* --------------------------------------------------------------------------
-   DISCONNECTED HANDLER
--------------------------------------------------------------------------- */
-function onDisconnected() {
-    log("Disconnected ❌");
 }
 
 /* --------------------------------------------------------------------------
@@ -179,11 +156,11 @@ function log(txt) {
 }
 
 /* --------------------------------------------------------------------------
-   BUTTON HANDLERS
+   BUTTON BINDINGS
 -------------------------------------------------------------------------- */
 document.getElementById("connectBtn").onclick = connectMicrobit;
 document.getElementById("startAI").onclick = loadModel;
-
 </script>
+
 </body>
 </html>
