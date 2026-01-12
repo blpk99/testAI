@@ -14,15 +14,14 @@ button { padding:8px 14px; margin:5px; }
 </head>
 <body>
 
-<h2>AI Trash Bin – Image + Bluetooth (Stable)</h2>
+<h2>AI + micro:bit Controller</h2>
 
 <button onclick="connectMicrobit()">🔵 Connect micro:bit</button>
-<button onclick="startAI()">📷 Start Camera + AI</button>
-<br><br>
+<button onclick="startAI()">📷 Start AI</button>
 
-<button onclick="sendCmd('F')">⬆ Send F</button>
-<button onclick="sendCmd('L')">⬅ Send L</button>
-<button onclick="sendCmd('R')">➡ Send R</button>
+<button onclick="sendCmd('F')">Send F</button>
+<button onclick="sendCmd('L')">Send L</button>
+<button onclick="sendCmd('R')">Send R</button>
 
 <p id="status">Status: Not connected</p>
 <video id="video" width="320" height="240" autoplay playsinline></video>
@@ -33,19 +32,17 @@ button { padding:8px 14px; margin:5px; }
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@1.1/dist/teachablemachine-image.min.js"></script>
 
 <script>
-/* ------------------ MODEL URL ------------------ */
 const modelURL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/model.json";
 const metadataURL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/metadata.json";
 
 let model;
-
-/* ------------------ BLUETOOTH UUID ------------------ */
-const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const UART_TX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-
 let txChar = null;
 
-/* ------------------ CONNECT MICROBIT ------------------ */
+const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_RX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // write
+const UART_TX      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // notify
+
+/* -------- CONNECT -------- */
 async function connectMicrobit() {
     try {
         const device = await navigator.bluetooth.requestDevice({
@@ -55,9 +52,10 @@ async function connectMicrobit() {
 
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService(UART_SERVICE);
-        txChar = await service.getCharacteristic(UART_TX);
 
-        document.getElementById("status").innerText = "Connected to micro:bit ✓";
+        txChar = await service.getCharacteristic(UART_RX);
+
+        document.getElementById("status").innerText = "Connected ✓";
         log("Connected");
 
     } catch (err) {
@@ -65,14 +63,14 @@ async function connectMicrobit() {
     }
 }
 
-/* ------------------ START AI MODEL ------------------ */
+/* -------- LOAD MODEL -------- */
 async function startAI() {
-    model = await tmImage.load(modelURL, metadataURL);
+    model = await window.tmImage.load(modelURL, metadataURL); // ✔ FIXED
     log("Model loaded!");
     startCamera();
 }
 
-/* ------------------ CAMERA ------------------ */
+/* -------- CAMERA -------- */
 async function startCamera() {
     const video = document.getElementById("video");
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -80,45 +78,35 @@ async function startCamera() {
     predictLoop();
 }
 
-/* ------------------ AI LOOP ------------------ */
+/* -------- AI LOOP -------- */
 async function predictLoop() {
     const prediction = await model.predict(video);
 
     prediction.forEach(p => {
-        if (p.className === "HandUp" && p.probability > 0.80) {
-            sendCmd("F");
-        }
-        if (p.className === "HandLeft" && p.probability > 0.80) {
-            sendCmd("L");
-        }
-        if (p.className === "HandRight" && p.probability > 0.80) {
-            sendCmd("R");
-        }
+        if (p.className === "HandUp" && p.probability > 0.80) sendCmd("F");
+        if (p.className === "HandLeft" && p.probability > 0.80) sendCmd("L");
+        if (p.className === "HandRight" && p.probability > 0.80) sendCmd("R");
     });
 
     requestAnimationFrame(predictLoop);
 }
 
-/* ------------------ SEND COMMAND TO MICROBIT ------------------ */
+/* -------- SEND COMMAND -------- */
 function sendCmd(cmd) {
-    if (!txChar) {
-        log("Not Connected!");
-        return;
-    }
+    if (!txChar) return log("Not Connected!");
 
     let data = new TextEncoder().encode(cmd + "\n");
 
-    // micro:bit รองรับเฉพาะ writeValueWithoutResponse
     txChar.writeValueWithoutResponse(data)
-    .then(() => log("SEND: " + cmd))
-    .catch(err => log("Write Error: " + err));
+        .then(() => log("SEND: " + cmd))
+        .catch(err => log("Write Error: " + err));
 }
 
-/* ------------------ LOGGER ------------------ */
-function log(text) {
-    let logBox = document.getElementById("log");
-    logBox.textContent += text + "\n";
-    logBox.scrollTop = logBox.scrollHeight;
+/* -------- LOGGER -------- */
+function log(t) {
+    const box = document.getElementById("log");
+    box.textContent += t + "\n";
+    box.scrollTop = box.scrollHeight;
 }
 </script>
 
