@@ -84,16 +84,20 @@ function sendCommand(label) {
   else if (label === "HandRight") cmd = "R";
   else cmd = "S";
 
-  // กันการส่งซ้ำเร็วเกิน
   const now = Date.now();
+
+  // ส่งเฉพาะเมื่อเปลี่ยนสถานะ หรือรอเกิน 500ms
   if (cmd !== lastCmd || now - lastSendTime > 500) {
-    characteristic.writeValue(new TextEncoder().encode(cmd));
+    const data = new TextEncoder().encode(cmd + "\n");
+    characteristic.writeValue(data);
     lastCmd = cmd;
     lastSendTime = now;
   }
 }
 
+
 </script>
 </body>
 </html>
+
 
