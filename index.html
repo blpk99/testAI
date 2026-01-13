@@ -93,14 +93,19 @@
             }
 
             try {
-                // ส่งค่าพร้อมเครื่องหมาย #
-                let message = cmd + "#"; 
+                let message = cmd + "#"; // รูปแบบที่ถูกต้อง
                 let encoder = new TextEncoder();
                 
-                // ใช้ writeValueWithoutResponse (ถูกต้องแล้วสำหรับ Micro:bit)
-                await txChar.writeValueWithoutResponse(encoder.encode(message));
+                // --- 🛠️ สูตรแก้: ส่งย้ำ 3 รอบ เพื่อความชัวร์ ---
+                log(`กำลังพยายามส่ง ${cmd}...`);
                 
-                log(`📤 ส่งข้อมูล: ${message} สำเร็จ`);
+                for (let i = 0; i < 3; i++) {
+                    await txChar.writeValueWithoutResponse(encoder.encode(message));
+                    await new Promise(r => setTimeout(r, 50)); // เว้นจังหวะนิดนึง 50ms
+                }
+                // ----------------------------------------
+                
+                log(`📤 ส่งข้อมูล: ${message} (ย้ำ 3 ครั้ง) สำเร็จ`);
             } catch (err) {
                 log("❌ ส่งไม่ไป: " + err);
             }
@@ -153,3 +158,4 @@
     </script>
 </body>
 </html>
+
