@@ -157,8 +157,8 @@
                 // -------------------------------------------------------------
                 
                 let encoder = new TextEncoder();
-                //await txChar.writeValueWithoutResponse(encoder.encode(message));
-                await txChar.writeValue(encoder.encode(message));
+                await txChar.writeValueWithoutResponse(encoder.encode(message));
+                //await txChar.writeValue(encoder.encode(message));
                 
                 lastSent = cmd;
                 document.getElementById("sent-cmd").innerText = "ค่าที่ส่งไป Micro:bit: " + cmd;
@@ -171,6 +171,7 @@
 
 </body>
 </html>
+
 
 
 
