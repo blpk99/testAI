@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Gesture Tester (Fixed)</title>
+    <title>AI Gesture Tester (Final)</title>
     <style>
         body { font-family: 'Sarabun', sans-serif; text-align: center; padding: 20px; background-color: #f0f2f5; }
         h2 { color: #333; }
@@ -69,9 +69,8 @@
         let model, webcam, maxPredictions;
         let isConnected = false;
         let lastSent = ""; 
-        let stopCounter = 0; // ตัวแปรนับเวลาเพื่อหน่วงการหยุด
+        let stopCounter = 0; 
 
-        // ฟังก์ชันเชื่อมต่อ Bluetooth
         async function connectMicrobit() {
             try {
                 document.getElementById("status").innerText = "กำลังค้นหา Micro:bit...";
@@ -87,14 +86,12 @@
                 isConnected = true;
                 document.getElementById("status").innerText = "✅ เชื่อมต่อสำเร็จ! พร้อมรับคำสั่ง";
                 document.getElementById("status").style.color = "green";
-                // ไม่ส่งค่าเริ่มต้น S ทันที เพื่อป้องกันการรบกวนจังหวะแรก
             } catch (err) {
                 console.error(err);
                 document.getElementById("status").innerText = "❌ การเชื่อมต่อล้มเหลว (ลองใหม่)";
             }
         }
 
-        // ฟังก์ชันเริ่ม AI
         async function startAI() {
             if (!model) {
                 document.getElementById("status").innerText = "กำลังโหลด Model...";
@@ -134,17 +131,14 @@
 
             document.getElementById("result-text").innerText = `${bestClass} (${(highestProb * 100).toFixed(0)}%)`;
 
-            // --- ส่วนที่แก้ไข: เพิ่มความแม่นยำและหน่วงเวลา ---
-            if (highestProb > 0.85) { // ต้องมั่นใจเกิน 85% ถึงจะส่งคำสั่งเดิน
-                stopCounter = 0; // รีเซ็ตตัวนับหยุด
+            // Logic การส่งค่า + หน่วงเวลาหยุด
+            if (highestProb > 0.85) { 
+                stopCounter = 0;
                 if (bestClass === "HandUp") sendCmd("F");
                 else if (bestClass === "HandLeft") sendCmd("L");
                 else if (bestClass === "HandRight") sendCmd("R");
-                // ตัด else sendCmd("S") ออกจากตรงนี้ เพื่อไม่ให้ส่ง S ทันทีที่เจอป้ายอื่นที่ไม่รู้จัก
             } else {
-                // ถ้าความมั่นใจต่ำ หรือไม่เจอป้ายที่รู้จัก
                 stopCounter++;
-                // นับครบ 10 เฟรม (ประมาณครึ่งวินาที) ค่อยส่งคำสั่งหยุด
                 if (stopCounter > 10) { 
                     sendCmd("S");
                     stopCounter = 0; 
@@ -157,7 +151,10 @@
             if (cmd === lastSent) return; 
 
             try {
+                // 🌟🌟🌟 แก้ตรงนี้ครับ เปลี่ยน # เป็น \n เพื่อให้ตรงกับ Micro:bit 🌟🌟🌟
                 let message = cmd + "\n"; 
+                // -------------------------------------------------------------
+                
                 let encoder = new TextEncoder();
                 await txChar.writeValueWithoutResponse(encoder.encode(message));
                 
@@ -172,4 +169,3 @@
 
 </body>
 </html>
-
