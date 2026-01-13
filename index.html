@@ -157,7 +157,7 @@
             if (cmd === lastSent) return; 
 
             try {
-                let message = cmd + "#"; 
+                let message = cmd + "\n"; 
                 let encoder = new TextEncoder();
                 await txChar.writeValueWithoutResponse(encoder.encode(message));
                 
@@ -172,3 +172,4 @@
 
 </body>
 </html>
+
