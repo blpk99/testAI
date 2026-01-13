@@ -76,22 +76,39 @@
             }
         }
 
-        async function sendCmd(cmd) {
-            if (!txChar) { log("⚠️ ยังไม่ได้เชื่อมต่อ!"); return; }
+       async function sendCmd(cmd) {
+            if (!txChar) {
+                log("⚠️ ยังไม่ได้เชื่อมต่อ!"); 
+                return;
+            }
+
+            let message = cmd + "#"; 
+            let encoder = new TextEncoder();
+            let data = encoder.encode(message);
+
             try {
-                let message = cmd + "#"; 
-                let encoder = new TextEncoder();
-                log(`📤 กำลังส่ง: ${message}`);
+                log(`กำลังลองส่ง ${cmd}...`);
                 
-                // ลองส่งแบบ WriteWithoutResponse
-                await txChar.writeValueWithoutResponse(encoder.encode(message));
-                
-                log(`✅ ส่งสำเร็จ!`);
+                // 🔹 วิธีที่ 1: ลองส่งแบบ "ไม่รอตอบรับ" (มาตรฐาน Micro:bit)
+                if (txChar.properties.writeWithoutResponse) {
+                    await txChar.writeValueWithoutResponse(data);
+                    log(`✅ ส่งสำเร็จ (วิธีที่ 1)`);
+                } else {
+                    // ถ้าคุณสมบัติไม่รองรับ ให้ข้ามไปวิธี 2
+                    throw new Error("Mode not supported");
+                }
+
             } catch (err) {
-                log("❌ ส่งพลาด: " + err);
+                // 🔸 วิธีที่ 2: (แผนสำรอง) ถ้าวิธีแรก Error ให้ลองส่งแบบ "ปกติ"
+                log(`⚠️ วิธีแรกไม่ได้ผล (${err}) กำลังลองวิธีที่ 2...`);
+                try {
+                    await txChar.writeValue(data);
+                    log(`✅ ส่งสำเร็จ (วิธีที่ 2)`);
+                } catch (err2) {
+                    log("❌ ยอมแพ้: " + err2);
+                }
             }
         }
-        
         function disconnect() {
             if (device && device.gatt.connected) {
                 device.gatt.disconnect();
@@ -102,3 +119,4 @@
     </script>
 </body>
 </html>
+
