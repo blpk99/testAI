@@ -134,7 +134,7 @@
             // Logic การส่งค่า + หน่วงเวลาหยุด
             if (highestProb > 0.85) { 
                 stopCounter = 0;
-                if (bestClass === "HandUp") sendCmd("F#");
+                if (bestClass === "HandUp") sendCmd("F");
                 else if (bestClass === "HandLeft") sendCmd("L");
                 else if (bestClass === "HandRight") sendCmd("R");
             } else {
@@ -171,6 +171,7 @@
 
 </body>
 </html>
+
 
 
 
