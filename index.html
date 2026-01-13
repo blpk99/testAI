@@ -3,130 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Final Test Microbit</title>
+    <title>AI Robot Controller</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f4; }
-        button { padding: 15px 25px; font-size: 20px; margin: 10px; cursor: pointer; border-radius: 10px; border: none; color: white; }
-        .btn-connect { background: #007bff; }
-        .btn-camera { background: #28a745; }
-        .btn-test { background: #ffc107; color: black; border: 2px solid #333; } /* ปุ่มทดสอบ */
-        #status { font-weight: bold; margin-top: 20px; font-size: 18px; }
-        #console-log { 
-            background: #333; color: #0f0; padding: 10px; 
-            text-align: left; height: 150px; overflow-y: scroll; 
-            margin-top: 20px; font-family: monospace; 
+        body { font-family: 'Sarabun', sans-serif; text-align: center; padding: 20px; background-color: #f4f4f4; }
+        h2 { color: #333; margin-bottom: 20px; }
+        
+        /* สไตล์ปุ่มกดสำหรับมือถือ */
+        button { 
+            width: 90%; 
+            max-width: 350px;
+            padding: 15px; 
+            font-size: 20px; 
+            margin: 10px auto; 
+            border: none; 
+            border-radius: 15px; 
+            cursor: pointer; 
+            color: white; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            display: block; /* เรียงปุ่มลงมาแนวตั้ง */
+        }
+        .btn-blue { background-color: #007bff; }
+        .btn-green { background-color: #28a745; }
+        .btn-yellow { background-color: #ffc107; color: black; font-weight: bold; }
+        
+        #status { margin-top: 15px; font-weight: bold; font-size: 18px; color: #555; }
+        
+        #result-box {
+            background: white;
+            padding: 15px;
+            margin: 20px auto;
+            border-radius: 15px;
+            max-width: 90%;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        #result-text { font-size: 32px; font-weight: bold; color: #d9534f; margin: 10px 0; }
+        #sent-cmd { color: #888; font-size: 16px; }
+        
+        /* กรอบกล้อง */
+        #webcam-container {
+            margin-top: 20px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: inline-block;
+        }
+        canvas { width: 100%; max-width: 350px; border-radius: 15px; }
+        
+        /* กล่อง Log เล็กๆ ไว้ดู Error */
+        #console-log {
+            font-size: 12px; color: #aaa; margin-top: 30px; text-align: left;
+            background: #222; padding: 10px; border-radius: 5px;
+            height: 100px; overflow-y: scroll; display: none; /* ซ่อนไว้ก่อน */
         }
     </style>
 </head>
 <body>
 
-    <h2>🤖 Micro:bit AI Tester (Manual Debug)</h2>
+    <h2>🤖 สั่งงานหุ่นยนต์ด้วยมือถือ</h2>
 
-    <button class="btn-connect" onclick="connectMicrobit()">1. เชื่อมต่อ Bluetooth</button>
-    <button class="btn-camera" onclick="startAI()">2. เปิดกล้อง AI</button>
-    <br>
-    <button class="btn-test" onclick="sendCmd('F')">🛠️ กดปุ่มนี้เพื่อทดสอบส่ง F</button>
+    <button class="btn-blue" onclick="connectMicrobit()">1. เชื่อมต่อ Bluetooth</button>
+    <button class="btn-yellow" onclick="sendCmd('F')">🛠️ ทดสอบส่ง F (กดเล่นได้)</button>
+    <button class="btn-green" onclick="startAI()">2. เปิดกล้อง AI</button>
 
     <div id="status">สถานะ: รอการเชื่อมต่อ...</div>
-    <div id="result-text">AI Result: -</div>
-    
-    <div id="console-log">System Log...</div>
+
+    <div id="result-box">
+        <div>ผลลัพธ์จาก AI:</div>
+        <div id="result-text">-</div>
+        <div id="sent-cmd">คำสั่งล่าสุด: -</div>
+    </div>
 
     <div id="webcam-container"></div>
+    <div id="console-log"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
     <script>
-        const MODEL_URL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/";
-        
-        // UUID มาตรฐานของ Nordic UART
+        // ---------------- ตั้งค่า MODEL ----------------
+        const MODEL_URL = "https://teachablemachine.withgoogle.com/models/ie3j8Y26K/"; 
+        // ---------------------------------------------
+
         const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const UART_TX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
         let device, txChar, model, webcam, maxPredictions;
         let isConnected = false;
-        let lastSent = "";
+        let lastSent = ""; 
 
-        function log(msg) {
-            const logBox = document.getElementById("console-log");
-            logBox.innerHTML += `<div>> ${msg}</div>`;
-            logBox.scrollTop = logBox.scrollHeight;
-            console.log(msg);
-        }
-
+        // ฟังก์ชันเชื่อมต่อ (ปรับปรุงสำหรับ Android)
         async function connectMicrobit() {
             try {
-                log("กำลังค้นหา Micro:bit...");
+                document.getElementById("status").innerText = "⏳ กำลังค้นหา...";
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: "BBC micro:bit" }],
                     optionalServices: [UART_SERVICE]
                 });
 
-                log("กำลังเชื่อมต่อ GATT Server...");
                 const server = await device.gatt.connect();
-
-                log("กำลังหา Service UART...");
                 const service = await server.getPrimaryService(UART_SERVICE);
-
-                log("กำลังหา Characteristic TX...");
                 txChar = await service.getCharacteristic(UART_TX);
 
                 isConnected = true;
-                log("✅ เชื่อมต่อสำเร็จ! พร้อมส่งข้อมูล");
-                document.getElementById("status").innerText = "✅ Connected!";
+                document.getElementById("status").innerText = "✅ เชื่อมต่อแล้ว! (รอสักครู่...)";
                 document.getElementById("status").style.color = "green";
+
+                // 🌟🌟 ไฮไลท์สำคัญ: รอ 1 วินาที ให้ Android ตั้งหลัก 🌟🌟
+                await new Promise(r => setTimeout(r, 1000));
                 
-                // ลองส่งค่าทักทายทันที
+                // ส่งค่า S เพื่อเทสระบบ
                 sendCmd("S");
 
             } catch (err) {
-                log("❌ Error: " + err);
+                console.error(err);
                 document.getElementById("status").innerText = "❌ เชื่อมต่อไม่ได้: " + err;
             }
         }
 
-        async function sendCmd(cmd) {
-            if (!isConnected || !txChar) {
-                log("⚠️ ยังไม่ได้เชื่อมต่อ Bluetooth!");
-                return;
-            }
-
-            try {
-                let message = cmd + "#"; // รูปแบบที่ถูกต้อง
-                let encoder = new TextEncoder();
-                
-                // --- 🛠️ สูตรแก้: ส่งย้ำ 3 รอบ เพื่อความชัวร์ ---
-                log(`กำลังพยายามส่ง ${cmd}...`);
-                
-                for (let i = 0; i < 3; i++) {
-                    await txChar.writeValueWithoutResponse(encoder.encode(message));
-                    await new Promise(r => setTimeout(r, 50)); // เว้นจังหวะนิดนึง 50ms
-                }
-                // ----------------------------------------
-                
-                log(`📤 ส่งข้อมูล: ${message} (ย้ำ 3 ครั้ง) สำเร็จ`);
-            } catch (err) {
-                log("❌ ส่งไม่ไป: " + err);
-            }
-        }
-
+        // ฟังก์ชันเริ่ม AI
         async function startAI() {
             if (!model) {
-                log("กำลังโหลด Model...");
+                document.getElementById("status").innerText = "กำลังโหลด Model...";
                 const modelURL = MODEL_URL + "model.json";
                 const metadataURL = MODEL_URL + "metadata.json";
                 model = await tmImage.load(modelURL, metadataURL);
                 maxPredictions = model.getTotalClasses();
             }
 
+            // flip = true สำหรับกล้องหน้า (Selfie)
             const flip = true; 
             webcam = new tmImage.Webcam(300, 300, flip);
             await webcam.setup();
             await webcam.play();
             document.getElementById("webcam-container").appendChild(webcam.canvas);
+            
+            document.getElementById("status").innerText = "📸 กล้องทำงานแล้ว!";
             window.requestAnimationFrame(loop);
-            log("📸 กล้องเริ่มทำงาน");
         }
 
         async function loop() {
@@ -137,6 +149,7 @@
 
         async function predict() {
             const prediction = await model.predict(webcam.canvas);
+            
             let highestProb = 0;
             let bestClass = "";
             for (let i = 0; i < maxPredictions; i++) {
@@ -148,14 +161,36 @@
 
             document.getElementById("result-text").innerText = `${bestClass} (${(highestProb * 100).toFixed(0)}%)`;
 
-            // ส่งข้อมูลเมื่อมั่นใจ > 90% และไม่ซ้ำค่าเดิม
+            // Logic การส่งคำสั่ง (มั่นใจ 90% ขึ้นไป และไม่ส่งซ้ำค่าเดิม)
             if (highestProb > 0.90 && bestClass !== lastSent) {
-                if (bestClass === "HandUp") { sendCmd("F"); lastSent = "HandUp"; }
-                else if (bestClass === "HandLeft") { sendCmd("L"); lastSent = "HandLeft"; }
-                else if (bestClass === "HandRight") { sendCmd("R"); lastSent = "HandRight"; }
+                if (bestClass === "HandUp") sendCmd("F");
+                else if (bestClass === "HandLeft") sendCmd("L");
+                else if (bestClass === "HandRight") sendCmd("R");
+                else sendCmd("S"); // ถ้าเป็นท่าอื่น หรือ Background ให้หยุด
+            }
+        }
+
+        // ฟังก์ชันส่งข้อมูล (ปรับปรุงให้มี # เสมอ)
+        async function sendCmd(cmd) {
+            if (!isConnected || !txChar) return;
+
+            try {
+                // 🌟 ใส่ # ปิดท้ายให้ตรงกับ Micro:bit (F#)
+                let message = cmd + "#"; 
+                
+                let encoder = new TextEncoder();
+                // ใช้ writeValueWithoutResponse (เหมาะกับ Android/Micro:bit สุด)
+                await txChar.writeValueWithoutResponse(encoder.encode(message));
+                
+                lastSent = cmd;
+                document.getElementById("sent-cmd").innerText = "ส่งไปแล้ว: " + message;
+                console.log("Sent:", message);
+            } catch (err) {
+                console.error("Send error:", err);
+                document.getElementById("status").innerText = "⚠️ ส่งพลาด (ลองใหม่)";
             }
         }
     </script>
+
 </body>
 </html>
-
