@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Gesture Tester</title>
+    <title>AI Gesture Tester (Fixed)</title>
     <style>
         body { font-family: 'Sarabun', sans-serif; text-align: center; padding: 20px; background-color: #f0f2f5; }
         h2 { color: #333; }
@@ -14,9 +14,9 @@
             border: none; 
             border-radius: 50px; 
             cursor: pointer; 
-            transition: 0.3s;
-            color: white;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: 0.3s; 
+            color: white; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
         }
         .btn-blue { background-color: #007bff; }
         .btn-green { background-color: #28a745; }
@@ -68,7 +68,8 @@
         let device, txChar;
         let model, webcam, maxPredictions;
         let isConnected = false;
-        let lastSent = ""; // ตัวแปรกันส่งข้อมูลซ้ำ
+        let lastSent = ""; 
+        let stopCounter = 0; // ตัวแปรนับเวลาเพื่อหน่วงการหยุด
 
         // ฟังก์ชันเชื่อมต่อ Bluetooth
         async function connectMicrobit() {
@@ -86,7 +87,7 @@
                 isConnected = true;
                 document.getElementById("status").innerText = "✅ เชื่อมต่อสำเร็จ! พร้อมรับคำสั่ง";
                 document.getElementById("status").style.color = "green";
-                sendCmd("S"); // ส่งค่าเริ่มต้น
+                // ไม่ส่งค่าเริ่มต้น S ทันที เพื่อป้องกันการรบกวนจังหวะแรก
             } catch (err) {
                 console.error(err);
                 document.getElementById("status").innerText = "❌ การเชื่อมต่อล้มเหลว (ลองใหม่)";
@@ -122,7 +123,6 @@
         async function predict() {
             const prediction = await model.predict(webcam.canvas);
             
-            // หาค่าที่มีความน่าจะเป็นสูงสุด
             let highestProb = 0;
             let bestClass = "";
             for (let i = 0; i < maxPredictions; i++) {
@@ -132,27 +132,32 @@
                 }
             }
 
-            // แสดงผลบนหน้าจอ
             document.getElementById("result-text").innerText = `${bestClass} (${(highestProb * 100).toFixed(0)}%)`;
 
-            // เงื่อนไขส่งคำสั่ง (ต้องมั่นใจเกิน 80%)
-            if (highestProb > 0.80) {
+            // --- ส่วนที่แก้ไข: เพิ่มความแม่นยำและหน่วงเวลา ---
+            if (highestProb > 0.85) { // ต้องมั่นใจเกิน 85% ถึงจะส่งคำสั่งเดิน
+                stopCounter = 0; // รีเซ็ตตัวนับหยุด
                 if (bestClass === "HandUp") sendCmd("F");
                 else if (bestClass === "HandLeft") sendCmd("L");
                 else if (bestClass === "HandRight") sendCmd("R");
-                else sendCmd("S"); // กรณีเป็น Class อื่นๆ
+                // ตัด else sendCmd("S") ออกจากตรงนี้ เพื่อไม่ให้ส่ง S ทันทีที่เจอป้ายอื่นที่ไม่รู้จัก
             } else {
-                sendCmd("S"); // ถ้าไม่มั่นใจ ให้ส่งค่าหยุด
+                // ถ้าความมั่นใจต่ำ หรือไม่เจอป้ายที่รู้จัก
+                stopCounter++;
+                // นับครบ 10 เฟรม (ประมาณครึ่งวินาที) ค่อยส่งคำสั่งหยุด
+                if (stopCounter > 10) { 
+                    sendCmd("S");
+                    stopCounter = 0; 
+                }
             }
         }
 
-        // ฟังก์ชันส่งข้อมูลผ่าน Bluetooth
         async function sendCmd(cmd) {
             if (!isConnected || !txChar) return;
-            if (cmd === lastSent) return; // ถ้าค่าเดิม ไม่ต้องส่งซ้ำ (ลดภาระ Micro:bit)
+            if (cmd === lastSent) return; 
 
             try {
-                let message = cmd + "#"; // เติม # ปิดท้ายตามรูปแบบ
+                let message = cmd + "#"; 
                 let encoder = new TextEncoder();
                 await txChar.writeValueWithoutResponse(encoder.encode(message));
                 
