@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manual Control</title>
+    <title>Manual Control (Fixed)</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background: #eee; }
         button { width: 100%; padding: 15px; margin: 10px 0; font-size: 18px; border-radius: 10px; border: none; color: white; cursor: pointer; }
@@ -14,9 +14,9 @@
 </head>
 <body>
 
-    <h2>🛠️ Manual Test (No Auto-Send)</h2>
+    <h2>🛠️ Manual Test (Fixed)</h2>
     
-    <button class="btn-blue" onclick="connect()">1. เชื่อมต่อ (Connect Only)</button>
+    <button class="btn-blue" onclick="connect()">1. เชื่อมต่อ (Connect)</button>
     <button class="btn-yellow" onclick="send('F')">2. กดส่ง F (Manual)</button>
 
     <div id="log">Ready...</div>
@@ -24,7 +24,9 @@
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const CHAR_UUID    = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-        let device, char;
+        
+        // ประกาศตัวแปร Global ให้ใช้ได้ทุกที่
+        let device, txChar;
 
         function log(msg) { 
             const d = new Date().toLocaleTimeString();
@@ -33,30 +35,31 @@
 
         async function connect() {
             try {
-                log("Searching...");
+                log("🔍 Searching...");
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: "BBC micro:bit" }],
                     optionalServices: [SERVICE_UUID]
                 });
                 
-                log("Connecting GATT...");
+                log("🔗 Connecting GATT...");
                 const server = await device.gatt.connect();
                 
-                log("Getting Service...");
+                log("📂 Getting Service...");
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 
-                log("Getting Characteristic...");
-                char = await service.getCharacteristic(CHAR_UUID);
+                log("📝 Getting Characteristic...");
+                // เก็บค่าลงตัวแปร txChar (เพื่อให้ฟังก์ชัน send เรียกใช้ได้)
+                txChar = await service.getCharacteristic(CHAR_UUID);
                 
                 log("✅ Connected! (Waiting for command)");
-                // ⚠️ ไม่มีการส่งข้อมูลอัตโนมัติที่นี่ ปล่อยให้ระบบนิ่งๆ
                 
             } catch (e) { log("❌ Connect Error: " + e); }
         }
 
-        async function sendCmd(cmd) {
-            if (!isConnected || !txChar) {
-                console.log("⚠️ ยังไม่เชื่อมต่อ");
+        async function send(cmd) {
+            // เช็คว่าเชื่อมต่อหรือยัง โดยดูว่ามี txChar ไหม
+            if (!txChar) {
+                log("⚠️ ยังไม่เชื่อมต่อ (Not Connected)");
                 return;
             }
 
@@ -64,45 +67,35 @@
             let encoder = new TextEncoder();
             let data = encoder.encode(message);
 
-            console.log(`กำลังส่ง ${cmd}...`);
+            log(`📤 Attempting to send: ${cmd}...`);
 
             try {
-                // 🕵️‍♂️ เลียนแบบแอป: ตรวจสอบคุณสมบัติก่อนส่ง
+                // 🕵️‍♂️ Logic ความฉลาด: เช็คว่า Micro:bit รับแบบไหน
                 if (txChar.properties.writeWithoutResponse) {
-                    // ถ้า Micro:bit ชอบแบบ "ไม่รอตอบรับ" (ส่วนใหญ่เป็นอันนี้)
                     await txChar.writeValueWithoutResponse(data);
-                    console.log("✅ ส่งแบบ WithoutResponse สำเร็จ");
+                    log("✅ Sent (WithoutResponse)");
                 } 
                 else if (txChar.properties.write) {
-                    // ถ้า Micro:bit ชอบแบบ "รอตอบรับ"
                     await txChar.writeValue(data);
-                    console.log("✅ ส่งแบบ Write(Response) สำเร็จ");
+                    log("✅ Sent (WriteWithResponse)");
                 } 
                 else {
-                    throw new Error("ไม่พบช่องทางส่งข้อมูลที่รองรับ");
-                }
-
-                // อัปเดตหน้าจอ (ถ้ามี element นี้)
-                if(document.getElementById("sent-cmd")) {
-                    document.getElementById("sent-cmd").innerText = "ส่งแล้ว: " + message;
+                    throw new Error("No write property found");
                 }
 
             } catch (err) {
-                console.error("❌ ส่งพลาด:", err);
-                if(document.getElementById("status")) {
-                    document.getElementById("status").innerText = "⚠️ ส่งไม่ได้: " + err;
-                }
+                log("❌ Error 1: " + err);
                 
-                // 🚑 แผนสำรอง: ถ้าส่งไม่ไป ให้ลองอีกแบบ (Brute Force)
+                // 🚑 แผนสำรอง: ถ้าส่งไม่ไป ให้ลองอีกแบบ
                 try {
-                    console.log("🚑 ลองแผนสำรอง...");
+                    log("🚑 Retrying with alternative mode...");
                     await txChar.writeValue(data);
+                    log("✅ Sent (Retry Success)");
                 } catch(e2) {
-                    console.error("☠️ แผนสำรองก็ไม่รอด:", e2);
+                    log("☠️ Final Error: " + e2);
                 }
             }
         }
     </script>
 </body>
 </html>
-
