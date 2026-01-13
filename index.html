@@ -54,21 +54,55 @@
             } catch (e) { log("❌ Connect Error: " + e); }
         }
 
-        async function send(cmd) {
-            if (!char) { log("Not connected"); return; }
+        async function sendCmd(cmd) {
+            if (!isConnected || !txChar) {
+                console.log("⚠️ ยังไม่เชื่อมต่อ");
+                return;
+            }
+
+            let message = cmd + "#"; 
+            let encoder = new TextEncoder();
+            let data = encoder.encode(message);
+
+            console.log(`กำลังส่ง ${cmd}...`);
+
             try {
-                let msg = cmd + "#";
-                log(`Attempting to send: ${msg}`);
+                // 🕵️‍♂️ เลียนแบบแอป: ตรวจสอบคุณสมบัติก่อนส่ง
+                if (txChar.properties.writeWithoutResponse) {
+                    // ถ้า Micro:bit ชอบแบบ "ไม่รอตอบรับ" (ส่วนใหญ่เป็นอันนี้)
+                    await txChar.writeValueWithoutResponse(data);
+                    console.log("✅ ส่งแบบ WithoutResponse สำเร็จ");
+                } 
+                else if (txChar.properties.write) {
+                    // ถ้า Micro:bit ชอบแบบ "รอตอบรับ"
+                    await txChar.writeValue(data);
+                    console.log("✅ ส่งแบบ Write(Response) สำเร็จ");
+                } 
+                else {
+                    throw new Error("ไม่พบช่องทางส่งข้อมูลที่รองรับ");
+                }
+
+                // อัปเดตหน้าจอ (ถ้ามี element นี้)
+                if(document.getElementById("sent-cmd")) {
+                    document.getElementById("sent-cmd").innerText = "ส่งแล้ว: " + message;
+                }
+
+            } catch (err) {
+                console.error("❌ ส่งพลาด:", err);
+                if(document.getElementById("status")) {
+                    document.getElementById("status").innerText = "⚠️ ส่งไม่ได้: " + err;
+                }
                 
-                let encoder = new TextEncoder();
-                // ลองส่งแบบ WriteWithoutResponse อย่างเดียวก่อน (มาตรฐานสุด)
-                await char.writeValueWithoutResponse(encoder.encode(msg));
-                
-                log("✅ Sent Successfully!");
-            } catch (e) {
-                log("❌ Send Error: " + e);
+                // 🚑 แผนสำรอง: ถ้าส่งไม่ไป ให้ลองอีกแบบ (Brute Force)
+                try {
+                    console.log("🚑 ลองแผนสำรอง...");
+                    await txChar.writeValue(data);
+                } catch(e2) {
+                    console.error("☠️ แผนสำรองก็ไม่รอด:", e2);
+                }
             }
         }
     </script>
 </body>
 </html>
+
