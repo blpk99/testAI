@@ -3,120 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Debug Micro:bit</title>
+    <title>Manual Control</title>
     <style>
-        body { font-family: 'Sarabun', sans-serif; text-align: center; padding: 10px; background-color: #eee; }
-        button { 
-            width: 100%; max-width: 400px; padding: 15px; font-size: 20px; 
-            margin: 10px auto; border: none; border-radius: 10px; color: white; cursor: pointer;
-        }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #eee; }
+        button { width: 100%; padding: 15px; margin: 10px 0; font-size: 18px; border-radius: 10px; border: none; color: white; cursor: pointer; }
         .btn-blue { background: #007bff; }
-        .btn-yellow { background: #ffc107; color: black; font-weight: bold; }
-        .btn-red { background: #dc3545; }
-        
-        #log-box {
-            width: 95%; height: 200px; background: #000; color: #0f0; 
-            font-family: monospace; text-align: left; padding: 10px; 
-            margin: 10px auto; overflow-y: scroll; border-radius: 10px;
-            font-size: 14px;
-        }
+        .btn-yellow { background: #ffc107; color: black; }
+        #log { background: #000; color: #0f0; padding: 10px; height: 200px; overflow-y: scroll; text-align: left; margin-top: 10px; font-family: monospace; }
     </style>
 </head>
 <body>
 
-    <h3>🛠️ Debug Mode (เช็ค Error)</h3>
-
-    <button class="btn-blue" onclick="connectMicrobit()">1. เชื่อมต่อ Bluetooth</button>
-    <button class="btn-yellow" onclick="sendCmd('F')">📡 กดส่ง F (ทดสอบ)</button>
-    <button class="btn-red" onclick="disconnect()">❌ ตัดการเชื่อมต่อ</button>
-
-    <div id="status">สถานะ: ยังไม่เชื่อมต่อ</div>
+    <h2>🛠️ Manual Test (No Auto-Send)</h2>
     
-    <div id="log-box">System Ready...</div>
+    <button class="btn-blue" onclick="connect()">1. เชื่อมต่อ (Connect Only)</button>
+    <button class="btn-yellow" onclick="send('F')">2. กดส่ง F (Manual)</button>
+
+    <div id="log">Ready...</div>
 
     <script>
-        const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-        const UART_TX      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+        const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+        const CHAR_UUID    = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+        let device, char;
 
-        let device, txChar, server;
-
-        function log(msg) {
-            const box = document.getElementById("log-box");
-            const time = new Date().toLocaleTimeString();
-            box.innerHTML += `<div>[${time}] ${msg}</div>`;
-            box.scrollTop = box.scrollHeight;
+        function log(msg) { 
+            const d = new Date().toLocaleTimeString();
+            document.getElementById("log").innerHTML += `<div>[${d}] ${msg}</div>`; 
         }
 
-        async function connectMicrobit() {
+        async function connect() {
             try {
-                log("🔍 กำลังค้นหา Micro:bit...");
+                log("Searching...");
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: "BBC micro:bit" }],
-                    optionalServices: [UART_SERVICE]
+                    optionalServices: [SERVICE_UUID]
                 });
-
-                log("🔗 กำลังเชื่อมต่อ GATT...");
-                server = await device.gatt.connect();
-
-                log("📂 กำลังหา Service...");
-                const service = await server.getPrimaryService(UART_SERVICE);
-
-                log("📝 กำลังหา Characteristic...");
-                txChar = await service.getCharacteristic(UART_TX);
-
-                log("✅ เชื่อมต่อสำเร็จ! รอ 1 วินาที...");
-                document.getElementById("status").innerText = "✅ Connected";
                 
-                // รอ 1 วินาที ให้ Android ตั้งหลัก
-                await new Promise(r => setTimeout(r, 1000));
-                sendCmd("S");
-
-            } catch (err) {
-                log("❌ Error: " + err); // ถ่ายรูปตรงนี้มาให้ผมดูได้ครับ
-            }
+                log("Connecting GATT...");
+                const server = await device.gatt.connect();
+                
+                log("Getting Service...");
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                
+                log("Getting Characteristic...");
+                char = await service.getCharacteristic(CHAR_UUID);
+                
+                log("✅ Connected! (Waiting for command)");
+                // ⚠️ ไม่มีการส่งข้อมูลอัตโนมัติที่นี่ ปล่อยให้ระบบนิ่งๆ
+                
+            } catch (e) { log("❌ Connect Error: " + e); }
         }
 
-       async function sendCmd(cmd) {
-            if (!txChar) {
-                log("⚠️ ยังไม่ได้เชื่อมต่อ!"); 
-                return;
-            }
-
-            let message = cmd + "#"; 
-            let encoder = new TextEncoder();
-            let data = encoder.encode(message);
-
+        async function send(cmd) {
+            if (!char) { log("Not connected"); return; }
             try {
-                log(`กำลังลองส่ง ${cmd}...`);
+                let msg = cmd + "#";
+                log(`Attempting to send: ${msg}`);
                 
-                // 🔹 วิธีที่ 1: ลองส่งแบบ "ไม่รอตอบรับ" (มาตรฐาน Micro:bit)
-                if (txChar.properties.writeWithoutResponse) {
-                    await txChar.writeValueWithoutResponse(data);
-                    log(`✅ ส่งสำเร็จ (วิธีที่ 1)`);
-                } else {
-                    // ถ้าคุณสมบัติไม่รองรับ ให้ข้ามไปวิธี 2
-                    throw new Error("Mode not supported");
-                }
-
-            } catch (err) {
-                // 🔸 วิธีที่ 2: (แผนสำรอง) ถ้าวิธีแรก Error ให้ลองส่งแบบ "ปกติ"
-                log(`⚠️ วิธีแรกไม่ได้ผล (${err}) กำลังลองวิธีที่ 2...`);
-                try {
-                    await txChar.writeValue(data);
-                    log(`✅ ส่งสำเร็จ (วิธีที่ 2)`);
-                } catch (err2) {
-                    log("❌ ยอมแพ้: " + err2);
-                }
-            }
-        }
-        function disconnect() {
-            if (device && device.gatt.connected) {
-                device.gatt.disconnect();
-                log("Disconnected.");
-                document.getElementById("status").innerText = "❌ Disconnected";
+                let encoder = new TextEncoder();
+                // ลองส่งแบบ WriteWithoutResponse อย่างเดียวก่อน (มาตรฐานสุด)
+                await char.writeValueWithoutResponse(encoder.encode(msg));
+                
+                log("✅ Sent Successfully!");
+            } catch (e) {
+                log("❌ Send Error: " + e);
             }
         }
     </script>
 </body>
 </html>
-
